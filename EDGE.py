@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # Created by Dan Feldman and Connor Robinson for analyzing data from Espaillat Group research models.
-# Last updated: 6/01/15 by Dan
+# Last updated: 7/10/15 by Dan
 
 #-------------------------------------------IMPORT RELEVANT MODELS-------------------------------------------
 import numpy as np
@@ -26,7 +26,7 @@ plt.rc('figure', autolayout=True)
 # Folders where model output data and observational data can be found:
 datapath        = '/Users/danfeldman/Orion_Research/Orion_Research/CVSO_4Objs/Models/CVSO109PT2/'
 #figurepath      = '/Users/danfeldman/Orion_Research/Orion_Research/CVSO_4Objs/Look_SEDs/CVSO90PT/'
-figurepath      = '/Users/danfeldman/Orion_Research/Orion_Research/CVSO_4Objs/Models/Full_CVSO_Grid/CVSO90_Test/'
+figurepath      = '/Users/danfeldman/Orion_Research/Orion_Research/CVSO_4Objs/Models/CVSO107_2/'
 #deredpath       = '/Users/danfeldman/Orion_Research/Dereddening_Codes/starparam/'           # De-redden magnitude path
 
 #---------------------------------------------INDEPENDENT FUNCTIONS----------------------------------------------
@@ -853,8 +853,10 @@ def model_rchi2(objname, model, path):
     
     # The tough part -- figuring out the proper weights. Let's take a stab:
     weights     = np.ones(len(wavelength))      # Start with all ones
-    weights[wavelength <= 8.5] = 25             # Some weight to early phot/spec data
-    weights[wavelength >= 22]  = 60             # More weight to outer piece of SED
+    #weights[wavelength <= 8.5] = 25             # Some weight to early phot/spec data
+    #weights[wavelength >= 22]  = 60             # More weight to outer piece of SED
+    weights[wavelength <= 22]  = 75
+    weights[wavelength <= 1] = 1
     
     # Calculate the reduced chi-squared value for the model:
     chi_arr     = (flux - modelFlux) * weights / flux
@@ -929,6 +931,12 @@ class TTS_Model(object):
         HDUlist         = fits.open(fitsname)                           # Opens the fits file for use
         header          = HDUlist[0].header                             # Stores the header in this variable
         
+        # The new Python version of collate flips array indices, so must identify which collate.py was used:
+        if len(HDUlist[0].data['wl']) == 4:
+            new         = 1
+        else:
+            new         = 0
+        
         # Initialize meta-data attributes for this object:
         self.name       = name
         self.jobn       = jobn
@@ -961,8 +969,12 @@ class TTS_Model(object):
         # iWall is the flux from the inner wall. Disk is the emission from the angle file.
         if headonly == 0:
             if full_trans:
-                self.data   = {'wl': HDUlist[0].data[:,0], 'phot': HDUlist[0].data[:,1], 'iwall': HDUlist[0].data[:,2], \
-                               'disk': HDUlist[0].data[:,3]}
+                if new:
+                    self.data   = {'wl': HDUlist[0].data[0,:], 'phot': HDUlist[0].data[1,:], 'iwall': HDUlist[0].data[2,:], \
+                                   'disk': HDUlist[0].data[3,:]}
+                else:
+                    self.data   = {'wl': HDUlist[0].data[:,0], 'phot': HDUlist[0].data[:,1], 'iwall': HDUlist[0].data[:,2], \
+                                   'disk': HDUlist[0].data[:,3]}
             else:
                 # If a pre-transitional disk, have to match the job to the inner-wall job.
                 z           = raw_input('What altinh value are you using for the inner wall? ')
@@ -973,12 +985,16 @@ class TTS_Model(object):
                     raise IOError('__INIT__: Multiple inner wall models match. Do not know which one to pick.')
                 else:
                     outfits = fits.open(dpath + name + '_' + match[0] + '.fits')
-                    self.data   = {'wl': HDUlist[0].data[:,0], 'phot': HDUlist[0].data[:,1], 'owall': HDUlist[0].data[:,2], \
-                                   'disk': HDUlist[0].data[:,3], 'iwall': outfits[0].data[:,2]}
+                    if new:
+                        self.data   = {'wl': HDUlist[0].data[0,:], 'phot': HDUlist[0].data[1,:], 'owall': HDUlist[0].data[2,:], \
+                                       'disk': HDUlist[0].data[3,:], 'iwall': outfits[0].data[2,:]}
+                    else:
+                        self.data   = {'wl': HDUlist[0].data[:,0], 'phot': HDUlist[0].data[:,1], 'owall': HDUlist[0].data[:,2], \
+                                       'disk': HDUlist[0].data[:,3], 'iwall': outfits[0].data[:,2]}
             
         HDUlist.close()                                                 # Closes the fits file, since we no longer need it
         
-    def calc_total(self, phot=1, wall=1, disk=1, owall=0, dust=0, verbose=1):
+    def calc_total(self, phot=1, wall=1, disk=1, owall=0, dust=0, verbose=1, dust_high=0):
         """
         (By Dan)
         Calculates the total flux for our object (likely to be used for plotting and/or analysis). Once calculated, it
@@ -1013,14 +1029,14 @@ class TTS_Model(object):
             totFlux     = totFlux + self.data['owall']
         if dust != 0:
             try:
-                dustNum = numCheck(dust)
+                dustNum = numCheck(dust, high=dust_high)
             except:
                 raise ValueError('CALC_TOTAL: Error! Dust input not a valid integer')
                 
             dustHDU     = fits.open(self.dpath+self.name+'_OTD_'+dustNum+'.fits')
             if verbose:
                 print 'CALC_TOTAL: Adding optically thin dust component to total flux.'
-            self.data['dust']   = dustHDU[0].data[:,1]
+            self.data['dust']   = dustHDU[0].data[1,:]
             totFlux     = totFlux + self.data['dust']
         
         # Add the total flux array to the data dictionary attribute:
